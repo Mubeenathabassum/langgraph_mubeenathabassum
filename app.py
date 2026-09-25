@@ -1,5 +1,9 @@
 import os
 import uvicorn
+import io
+import sys
+import traceback
+
 from fastapi import FastAPI
 from langserve import add_routes
 from langchain_core.tools import tool
@@ -9,9 +13,6 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from typing import TypedDict, List, Optional
-import io
-import sys
-import traceback
 
 # =====================================================
 # GEMINI MODEL
@@ -19,9 +20,12 @@ import traceback
 
 GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+if not GOOGLE_API_KEY:
+    raise ValueError("GEMINI_API_KEY not found in Render Environment Variables.")
+
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
-    api_key=GOOGLE_API_KEY,
+    google_api_key=GOOGLE_API_KEY,
     temperature=0
 )
 
@@ -64,6 +68,8 @@ def generate_test_cases(task_description: str) -> str:
     """Generate 3-5 test cases for a coding problem."""
 
     prompt = f"""
+You are a Senior QA Engineer.
+
 Generate 3-5 numbered test cases for this coding task.
 
 Task:
@@ -73,8 +79,7 @@ Include edge cases.
 """
 
     response = llm.invoke(prompt)
-    return response.content
-
+    return str(response.content)
 
 # =====================================================
 # DEVELOPER NODE
@@ -95,11 +100,10 @@ Return ONLY Python code.
 
     response = llm.invoke(prompt)
 
-    code = response.content
+    code = str(response.content)
     code = code.replace("```python", "").replace("```", "").strip()
 
     return {"code": code}
-
 
 # =====================================================
 # TESTER NODE
@@ -124,7 +128,6 @@ Generated Test Cases
 
     return {"report": report}
 
-
 # =====================================================
 # LANGGRAPH WORKFLOW
 # =====================================================
@@ -147,20 +150,17 @@ graph = workflow.compile()
 class AgentInput(BaseModel):
     input: str = Field(description="Enter your coding task.")
 
-
-def format_input(x):
-    user_input = x["input"] if isinstance(x, dict) else x.input
+def format_input(data):
+    user_input = data["input"] if isinstance(data, dict) else data.input
     return {
         "messages": [HumanMessage(content=user_input)]
     }
-
 
 def extract_output(state):
     return {
         "generated_code": state["code"],
         "execution_report": state["report"]
     }
-
 
 formatted_graph_chain = (
     RunnableLambda(format_input)
