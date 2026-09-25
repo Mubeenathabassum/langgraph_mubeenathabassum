@@ -9,13 +9,14 @@ from pydantic import BaseModel
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.tools import tool
+from langchain_core.runnables import RunnableLambda
 from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langserve import add_routes
 
-# -----------------------------
-# Gemini API Key (Render)
-# -----------------------------
+# =====================================================
+# GEMINI LLM
+# =====================================================
 api_key = os.getenv("GEMINI_API_KEY")
 
 llm = ChatGoogleGenerativeAI(
@@ -23,17 +24,17 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=api_key
 )
 
-# -----------------------------
-# LangGraph State
-# -----------------------------
+# =====================================================
+# STATE
+# =====================================================
 class CrewState(TypedDict):
     messages: List[BaseMessage]
     code: Optional[str]
     report: Optional[str]
 
-# -----------------------------
-# Tools
-# -----------------------------
+# =====================================================
+# TOOLS
+# =====================================================
 @tool
 def run_python_code(code: str) -> str:
     """Execute Python code and return output."""
@@ -57,35 +58,35 @@ def run_python_code(code: str) -> str:
 
 @tool
 def generate_test_cases(task_description: str) -> str:
-    """Generate test cases using Gemini."""
+    """Generate 3–5 test cases using Gemini."""
 
     prompt = f"""
-    You are a Senior QA Engineer.
+You are a Senior QA Engineer.
 
-    Generate 3 to 5 numbered test cases for this coding task:
+Generate 3 to 5 numbered test cases for the following coding task:
 
-    {task_description}
+{task_description}
 
-    Include normal and edge cases.
-    """
+Include normal cases and edge cases.
+"""
 
     return llm.invoke(prompt).content
 
-
-# -----------------------------
-# LangGraph Nodes
-# -----------------------------
+# =====================================================
+# NODES
+# =====================================================
 def developer_node(state: CrewState):
+
     task = state["messages"][-1].content
 
     prompt = f"""
-    Write clean Python code for the following task.
+Write a clean Python program for the following task.
 
-    Task:
-    {task}
+Task:
+{task}
 
-    Return ONLY Python code.
-    """
+Return ONLY Python code.
+"""
 
     code = llm.invoke(prompt).content
     code = code.replace("```python", "").replace("```", "").strip()
@@ -94,27 +95,27 @@ def developer_node(state: CrewState):
 
 
 def tester_node(state: CrewState):
+
     task = state["messages"][-1].content
 
     tests = generate_test_cases.invoke(task)
     output = run_python_code.invoke({"code": state["code"]})
 
     report = f"""
-Execution Output
-----------------
+### EXECUTION OUTPUT
+
 {output}
 
-Generated Test Cases
---------------------
+### GENERATED TEST CASES
+
 {tests}
 """
 
     return {"report": report}
 
-
-# -----------------------------
-# Build LangGraph Workflow
-# -----------------------------
+# =====================================================
+# LANGGRAPH WORKFLOW
+# =====================================================
 workflow = StateGraph(CrewState)
 
 workflow.add_node("developer", developer_node)
@@ -126,28 +127,29 @@ workflow.add_edge("tester", END)
 
 graph = workflow.compile()
 
-# -----------------------------
-# FastAPI + LangServe
-# -----------------------------
+# =====================================================
+# FASTAPI + LANGSERVE
+# =====================================================
 app = FastAPI(
-    title="LangGraph Coding Agent",
+    title="LangGraph Coding Assistant",
     version="1.0"
 )
 
-class TaskRequest(BaseModel):
+# Playground input schema
+class TaskInput(BaseModel):
     task: str
 
-@app.get("/")
-def home():
-    return {"status": "LangGraph Running"}
-
-@app.post("/generate")
-def generate(request: TaskRequest):
-    result = graph.invoke({
-        "messages": [HumanMessage(content=request.task)]
-    })
-
-    return result
+# Convert playground input into graph state
+playground_agent = RunnableLambda(
+    lambda request: graph.invoke(
+        {"messages": [HumanMessage(content=request.task)]}
+    )
+).with_types(input_type=TaskInput)
 
 # Student Tribe Playground Route
-add_routes(app, graph, path="/agent")
+add_routes(app, playground_agent, path="/agent")
+
+# Optional health check
+@app.get("/")
+def home():
+    return {"status": "LangGraph Agent Running Successfully 🚀"}
