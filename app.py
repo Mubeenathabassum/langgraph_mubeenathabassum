@@ -386,11 +386,7 @@ class AgentInput(BaseModel):
 
     input: str
 
-    manager_choice: Literal[
-        "store",
-        "another"
-    ] = "store"
-
+    
 
 # ============================================================
 # 14. PLAYGROUND OUTPUT
