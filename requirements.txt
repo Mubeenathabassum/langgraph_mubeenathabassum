@@ -1,8 +1,8 @@
 fastapi
 uvicorn
 langserve
-langchain-core
 langchain
+langchain-core
 langgraph
 langchain-google-genai
 google-generativeai
