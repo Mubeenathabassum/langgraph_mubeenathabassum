@@ -21,10 +21,10 @@ from typing import TypedDict, List, Optional
 GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not GOOGLE_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in Render Environment Variables.")
+    raise ValueError("GEMINI_API_KEY not found.")
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     google_api_key=GOOGLE_API_KEY,
     temperature=0
 )
@@ -79,7 +79,7 @@ Include edge cases.
 """
 
     response = llm.invoke(prompt)
-    return str(response.content)
+    return response.text() if hasattr(response, "text") else str(response.content)
 
 # =====================================================
 # DEVELOPER NODE
@@ -99,8 +99,7 @@ Return ONLY Python code.
 """
 
     response = llm.invoke(prompt)
-
-    code = str(response.content)
+    code = response.text() if hasattr(response, "text") else str(response.content)
     code = code.replace("```python", "").replace("```", "").strip()
 
     return {"code": code}
@@ -179,3 +178,6 @@ add_routes(app, formatted_graph_chain, path="/agent")
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+@app.get("/")
+def home():
+    return {"status": "LangGraph Running"}
