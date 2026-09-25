@@ -17,11 +17,7 @@ from langserve import add_routes
 # =====================================================
 # GEMINI MODEL
 # =====================================================
-
 api_key = os.getenv("GEMINI_API_KEY")
-
-if not api_key:
-    raise ValueError("GEMINI_API_KEY not found in Render Environment Variables.")
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
@@ -30,9 +26,8 @@ llm = ChatGoogleGenerativeAI(
 )
 
 # =====================================================
-# STATE
+# GRAPH STATE
 # =====================================================
-
 class CrewState(TypedDict):
     messages: List[BaseMessage]
     code: Optional[str]
@@ -41,7 +36,6 @@ class CrewState(TypedDict):
 # =====================================================
 # TOOLS
 # =====================================================
-
 @tool
 def run_python_code(code: str) -> str:
     """Execute Python code and return output."""
@@ -65,16 +59,17 @@ def run_python_code(code: str) -> str:
 
 @tool
 def generate_test_cases(task_description: str) -> str:
-    """Generate test cases using Gemini."""
+    """Generate 3-5 test cases."""
 
     prompt = f"""
 You are a Senior QA Engineer.
 
-Generate 3-5 numbered test cases for this coding task:
+Generate 3-5 numbered test cases for this coding task.
 
+Task:
 {task_description}
 
-Include edge cases also.
+Include edge cases.
 """
 
     response = llm.invoke(prompt)
@@ -90,13 +85,12 @@ Include edge cases also.
 # =====================================================
 # DEVELOPER NODE
 # =====================================================
-
 def developer_node(state: CrewState):
 
     task = state["messages"][-1].content
 
     prompt = f"""
-Write clean Python code for the following task.
+Write clean Python code for this task.
 
 Task:
 {task}
@@ -121,7 +115,6 @@ Return ONLY Python code.
 # =====================================================
 # TESTER NODE
 # =====================================================
-
 def tester_node(state: CrewState):
 
     task = state["messages"][-1].content
@@ -130,21 +123,20 @@ def tester_node(state: CrewState):
     output = run_python_code.invoke({"code": state["code"]})
 
     report = f"""
-### EXECUTION OUTPUT
-
+Execution Output
+----------------
 {output}
 
-### GENERATED TEST CASES
-
+Generated Test Cases
+--------------------
 {tests}
 """
 
     return {"report": report}
 
 # =====================================================
-# LANGGRAPH WORKFLOW
+# BUILD LANGGRAPH
 # =====================================================
-
 workflow = StateGraph(CrewState)
 
 workflow.add_node("developer", developer_node)
@@ -157,43 +149,44 @@ workflow.add_edge("tester", END)
 graph = workflow.compile()
 
 # =====================================================
-# FASTAPI + LANGSERVE
+# FASTAPI APP
 # =====================================================
-
-app = FastAPI(
-    title="LangGraph Coding Assistant",
-    version="1.0"
-)
+app = FastAPI(title="LangGraph Coding Assistant")
 
 @app.get("/")
 def home():
-    return {"status": "LangGraph Running Successfully 🚀"}
+    return {"status": "LangGraph Running Successfully"}
 
-# Playground Input
+# =====================================================
+# PLAYGROUND INPUT / OUTPUT
+# =====================================================
 class TaskInput(BaseModel):
     task: str
 
-# Playground Output
 class TaskOutput(BaseModel):
     generated_code: str
     execution_report: str
 
-# Playground Runner
-def agent_runner(data: TaskInput):
+# =====================================================
+# LANGSERVE PLAYGROUND RUNNER
+# =====================================================
+def playground_runner(data: dict):
 
-    result = graph.invoke({
-        "messages": [HumanMessage(content=data.task)]
-    })
-
-    return TaskOutput(
-        generated_code=result["code"],
-        execution_report=result["report"]
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content=data["task"])]
+        }
     )
 
-playground_agent = RunnableLambda(agent_runner).with_types(
+    return {
+        "generated_code": result["code"],
+        "execution_report": result["report"]
+    }
+
+playground_agent = RunnableLambda(playground_runner).with_types(
     input_type=TaskInput,
     output_type=TaskOutput
 )
 
-# Student Tribe Playground
+# IMPORTANT: This creates /agent/playground
 add_routes(app, playground_agent, path="/agent")
