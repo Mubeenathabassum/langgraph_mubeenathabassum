@@ -73,10 +73,9 @@ Include normal cases and edge cases.
     return llm.invoke(prompt).content
 
 # =====================================================
-# NODES
+# LANGGRAPH NODES
 # =====================================================
 def developer_node(state: CrewState):
-
     task = state["messages"][-1].content
 
     prompt = f"""
@@ -95,7 +94,6 @@ Return ONLY Python code.
 
 
 def tester_node(state: CrewState):
-
     task = state["messages"][-1].content
 
     tests = generate_test_cases.invoke(task)
@@ -114,7 +112,7 @@ def tester_node(state: CrewState):
     return {"report": report}
 
 # =====================================================
-# LANGGRAPH WORKFLOW
+# BUILD LANGGRAPH
 # =====================================================
 workflow = StateGraph(CrewState)
 
@@ -128,28 +126,39 @@ workflow.add_edge("tester", END)
 graph = workflow.compile()
 
 # =====================================================
-# FASTAPI + LANGSERVE
+# FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="LangGraph Coding Assistant",
     version="1.0"
 )
 
-# Playground input schema
-class TaskInput(BaseModel):
-    task: str
-
-# Convert playground input into graph state
-playground_agent = RunnableLambda(
-    lambda request: graph.invoke(
-        {"messages": [HumanMessage(content=request.task)]}
-    )
-).with_types(input_type=TaskInput)
-
-# Student Tribe Playground Route
-add_routes(app, playground_agent, path="/agent")
-
-# Optional health check
 @app.get("/")
 def home():
     return {"status": "LangGraph Agent Running Successfully 🚀"}
+
+# =====================================================
+# PLAYGROUND INPUT SCHEMA
+# =====================================================
+class TaskInput(BaseModel):
+    task: str
+
+# =====================================================
+# PLAYGROUND RUNNER
+# =====================================================
+def run_agent(request: TaskInput):
+    result = graph.invoke({
+        "messages": [HumanMessage(content=request.task)]
+    })
+
+    return {
+        "Generated Code": result["code"],
+        "Execution Report": result["report"]
+    }
+
+playground_agent = RunnableLambda(run_agent).with_types(
+    input_type=TaskInput
+)
+
+# Student Tribe Playground Route
+add_routes(app, playground_agent, path="/agent")
