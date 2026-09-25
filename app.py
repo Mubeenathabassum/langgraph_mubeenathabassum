@@ -50,10 +50,6 @@ class CrewState(TypedDict):
 # ============================================================
 
 def response_to_text(response) -> str:
-    """
-    Convert Gemini response content into normal text.
-    """
-
     content = response.content
 
     if isinstance(content, str):
@@ -76,10 +72,6 @@ def response_to_text(response) -> str:
 
 
 def clean_code(code: str) -> str:
-    """
-    Remove Markdown code fences if Gemini adds them.
-    """
-
     code = code.strip()
 
     if code.startswith("```"):
@@ -97,10 +89,6 @@ def clean_code(code: str) -> str:
 
 
 def run_python_code(code: str) -> str:
-    """
-    Execute generated Python code safely with a timeout.
-    """
-
     temp_path = None
 
     try:
@@ -146,7 +134,6 @@ def run_python_code(code: str) -> str:
 # ============================================================
 
 def task_input_node(state: CrewState):
-
     return {
         "messages": state["messages"],
         "next_step": "developer"
@@ -172,9 +159,13 @@ IMPORTANT:
 - Do not explain the code.
 """
 
-    response = model.invoke([HumanMessage(content=prompt)])
+    response = model.invoke(
+        [HumanMessage(content=prompt)]
+    )
 
-    code = clean_code(response_to_text(response))
+    code = clean_code(
+        response_to_text(response)
+    )
 
     return {
         "code": code,
@@ -186,14 +177,13 @@ def tester_node(state: CrewState):
 
     code = state["code"]
 
-    # Execute the generated code
+    # Execute generated Python code
     execution_output = run_python_code(code)
 
-    # Generate a short and clear QA report
     prompt = f"""
 You are a Senior QA Engineer.
 
-The following Python program was generated:
+Generated Python program:
 
 {code}
 
@@ -225,7 +215,9 @@ Do not include:
 - Markdown tables
 """
 
-    response = model.invoke([HumanMessage(content=prompt)])
+    response = model.invoke(
+        [HumanMessage(content=prompt)]
+    )
 
     report = response_to_text(response).strip()
 
@@ -238,7 +230,10 @@ Do not include:
 
 def manager_decision_node(state: CrewState):
 
-    choice = state.get("manager_choice", "store")
+    choice = state.get(
+        "manager_choice",
+        "store"
+    )
 
     if choice == "store":
         return {
@@ -263,17 +258,51 @@ def archiver_node(state: CrewState):
 
 graph = StateGraph(CrewState)
 
-graph.add_node("task_input", task_input_node)
-graph.add_node("developer", developer_node)
-graph.add_node("tester", tester_node)
-graph.add_node("manager", manager_decision_node)
-graph.add_node("archiver", archiver_node)
+graph.add_node(
+    "task_input",
+    task_input_node
+)
+
+graph.add_node(
+    "developer",
+    developer_node
+)
+
+graph.add_node(
+    "tester",
+    tester_node
+)
+
+graph.add_node(
+    "manager",
+    manager_decision_node
+)
+
+graph.add_node(
+    "archiver",
+    archiver_node
+)
 
 
-graph.add_edge(START, "task_input")
-graph.add_edge("task_input", "developer")
-graph.add_edge("developer", "tester")
-graph.add_edge("tester", "manager")
+graph.add_edge(
+    START,
+    "task_input"
+)
+
+graph.add_edge(
+    "task_input",
+    "developer"
+)
+
+graph.add_edge(
+    "developer",
+    "tester"
+)
+
+graph.add_edge(
+    "tester",
+    "manager"
+)
 
 
 def manager_route(state: CrewState):
@@ -293,7 +322,10 @@ graph.add_conditional_edges(
     }
 )
 
-graph.add_edge("archiver", END)
+graph.add_edge(
+    "archiver",
+    END
+)
 
 
 rt_app = graph.compile()
@@ -305,7 +337,10 @@ rt_app = graph.compile()
 
 class AgentInput(BaseModel):
     input: str
-    manager_choice: Literal["store", "another"] = "store"
+    manager_choice: Literal[
+        "store",
+        "another"
+    ] = "store"
 
 
 class AgentOutput(BaseModel):
@@ -320,19 +355,29 @@ class AgentOutput(BaseModel):
 # RUN AGENT
 # ============================================================
 
-def run_agent(data: AgentInput):
+def run_agent(data):
 
     try:
 
+        # LangServe sends the input as a dictionary
+        user_input = data["input"]
+
+        manager_choice = data.get(
+            "manager_choice",
+            "store"
+        )
+
         initial_state: CrewState = {
             "messages": [
-                HumanMessage(content=data.input)
+                HumanMessage(
+                    content=user_input
+                )
             ],
             "next_step": None,
             "code": None,
             "execution_output": None,
             "report": None,
-            "manager_choice": data.manager_choice
+            "manager_choice": manager_choice
         }
 
         result = rt_app.invoke(
@@ -345,8 +390,12 @@ def run_agent(data: AgentInput):
         return {
             "status": "success",
             "generated_code": result.get("code"),
-            "execution_output": result.get("execution_output"),
-            "testing_report": result.get("report")
+            "execution_output": result.get(
+                "execution_output"
+            ),
+            "testing_report": result.get(
+                "report"
+            )
         }
 
     except Exception as e:
@@ -394,7 +443,12 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    port = int(os.environ.get("PORT", 8000))
+    port = int(
+        os.environ.get(
+            "PORT",
+            8000
+        )
+    )
 
     uvicorn.run(
         app,
