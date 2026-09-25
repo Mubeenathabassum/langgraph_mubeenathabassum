@@ -18,17 +18,13 @@ from typing import TypedDict, List, Optional
 # GEMINI MODEL
 # =====================================================
 
-GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-if not GOOGLE_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found.")
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     google_api_key=GOOGLE_API_KEY,
-    temperature=0
+    temperature=0,
 )
-
 # =====================================================
 # STATE
 # =====================================================
