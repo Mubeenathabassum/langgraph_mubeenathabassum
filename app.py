@@ -1,18 +1,20 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import TypedDict, List, Optional
 import os
 import io
 import sys
 import traceback
+from typing import TypedDict, List, Optional
 
-from langchain_core.messages import HumanMessage, BaseMessage
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langserve import add_routes
 
 # -----------------------------
-# Gemini API Key from Render
+# Gemini API Key (Render)
 # -----------------------------
 api_key = os.getenv("GEMINI_API_KEY")
 
@@ -20,14 +22,6 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     google_api_key=api_key
 )
-
-# -----------------------------
-# FastAPI App
-# -----------------------------
-app = FastAPI(title="LangGraph Coding Agent")
-
-class TaskRequest(BaseModel):
-    task: str
 
 # -----------------------------
 # LangGraph State
@@ -38,11 +32,11 @@ class CrewState(TypedDict):
     report: Optional[str]
 
 # -----------------------------
-# Tool 1: Execute Python Code
+# Tools
 # -----------------------------
 @tool
 def run_python_code(code: str) -> str:
-    """Execute generated Python code and return output."""
+    """Execute Python code and return output."""
 
     clean_code = code.replace("```python", "").replace("```", "").strip()
 
@@ -60,46 +54,45 @@ def run_python_code(code: str) -> str:
 
     return output if output else "Success (No Output)"
 
-# -----------------------------
-# Tool 2: Generate Test Cases
-# -----------------------------
+
 @tool
 def generate_test_cases(task_description: str) -> str:
     """Generate test cases using Gemini."""
 
     prompt = f"""
-You are a QA Engineer.
+    You are a Senior QA Engineer.
 
-Generate 3-5 numbered test cases for this coding task:
+    Generate 3 to 5 numbered test cases for this coding task:
 
-{task_description}
-"""
+    {task_description}
+
+    Include normal and edge cases.
+    """
 
     return llm.invoke(prompt).content
 
+
 # -----------------------------
-# Developer Node
+# LangGraph Nodes
 # -----------------------------
 def developer_node(state: CrewState):
     task = state["messages"][-1].content
 
     prompt = f"""
-Write a clean Python solution for this task.
+    Write clean Python code for the following task.
 
-Task:
-{task}
+    Task:
+    {task}
 
-Return ONLY Python code.
-"""
+    Return ONLY Python code.
+    """
 
     code = llm.invoke(prompt).content
     code = code.replace("```python", "").replace("```", "").strip()
 
     return {"code": code}
 
-# -----------------------------
-# Tester Node
-# -----------------------------
+
 def tester_node(state: CrewState):
     task = state["messages"][-1].content
 
@@ -118,8 +111,9 @@ Generated Test Cases
 
     return {"report": report}
 
+
 # -----------------------------
-# Build LangGraph
+# Build LangGraph Workflow
 # -----------------------------
 workflow = StateGraph(CrewState)
 
@@ -133,20 +127,27 @@ workflow.add_edge("tester", END)
 graph = workflow.compile()
 
 # -----------------------------
-# API Routes
+# FastAPI + LangServe
 # -----------------------------
+app = FastAPI(
+    title="LangGraph Coding Agent",
+    version="1.0"
+)
+
+class TaskRequest(BaseModel):
+    task: str
+
 @app.get("/")
 def home():
-    return {"status": "LangGraph API Running on Render 🚀"}
+    return {"status": "LangGraph Running"}
 
 @app.post("/generate")
-def generate_solution(request: TaskRequest):
+def generate(request: TaskRequest):
     result = graph.invoke({
         "messages": [HumanMessage(content=request.task)]
     })
 
-    return {
-        "task": request.task,
-        "generated_code": result["code"],
-        "report": result["report"]
-    }
+    return result
+
+# Student Tribe Playground Route
+add_routes(app, graph, path="/agent")
